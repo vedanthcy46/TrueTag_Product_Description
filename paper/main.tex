@@ -70,7 +70,7 @@ Prior work measures whether a model hallucinates but not where in a two-stage pi
 \item \textbf{A double-annotated benchmark} of 240 apparel images (13 categories including kurta and saree, 12 colors, 8 materials) with adjudicated labels, validation data and human ratings.
 \item \textbf{Findings and a deployable system.} Two LLM families add no attribute errors given structured evidence, abstention survives the language stage, and a verify-and-repair pipeline built on these findings runs offline on a central processing unit (CPU).
 \end{itemize}
-To the best of the authors' knowledge, this is the first study that decomposes attribute hallucination in image-grounded generation by stage and measures whether abstention propagates through the language model.
+To the best of the surveyed literature, this is the first study that decomposes attribute hallucination in image-grounded generation by stage and measures whether abstention propagates through the language model.
 
 \subsection{Motivation and Paper Organization}
 The motivation is practical: a marketplace that deploys grounded generation needs to know whether to invest in a better classifier, a better writer or a stricter generation constraint, and an end-to-end hallucination rate cannot answer that question. The remainder of the paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:method} describes the experimental conditions, the extractor with calibrated abstention and the APG generator. Section~\ref{sec:eval} defines the evaluation framework, and Section~\ref{sec:setup} the data, annotation and models. Section~\ref{sec:results} reports results for three research questions (RQ1 to RQ3), Section~\ref{sec:discussion} discusses deployment, Section~\ref{sec:limits} lists limitations, and Section~\ref{sec:conclusion} concludes.
@@ -81,7 +81,7 @@ The motivation is practical: a marketplace that deploys grounded generation need
 
 \textbf{Faithfulness to structured input.} Data-to-text research has long observed that neural generators state facts absent from their input records~\cite{wiseman2017challenges} and has proposed table-aware metrics such as PARENT~\cite{dhingra2019parent}. Claim-level factuality metrics such as FActScore~\cite{min2023factscore} and LLM-as-a-judge evaluation~\cite{zheng2023judging} score individual supported and unsupported statements. The present framework combines a deterministic attribute checker with a validated LLM judge for non-attribute claims.
 
-\textbf{Selective prediction.} Selective classification abstains below a confidence threshold to trade coverage for accuracy~\cite{geifman2017selective}. Zero-shot dual encoders such as CLIP (Contrastive Language-Image Pre-training)~\cite{radford2021clip} and SigLIP (Sigmoid Loss for Language-Image Pre-training)~\cite{zhai2023siglip} provide scores that are calibrated enough to apply this idea to attribute extraction. Whether such abstention survives downstream generation has, to the best of the authors' knowledge, not been measured.
+\textbf{Selective prediction.} Selective classification abstains below a confidence threshold to trade coverage for accuracy~\cite{geifman2017selective}. Zero-shot dual encoders such as CLIP (Contrastive Language-Image Pre-training)~\cite{radford2021clip} and SigLIP (Sigmoid Loss for Language-Image Pre-training)~\cite{zhai2023siglip} provide scores that are calibrated enough to apply this idea to attribute extraction. Whether such abstention survives downstream generation has not been measured in the surveyed literature.
 
 \textbf{Product description generation.} E-commerce description generators condition on product attributes or knowledge bases~\cite{chen2019kobe} and assume that the attributes are correct. The present study asks what happens when they are not, and when the attribute extractor is uncertain.
 
@@ -222,7 +222,7 @@ The extractors are CLIP ViT-L/14~\cite{radford2021clip} and SigLIP so400m~\cite{
 Table~\ref{tab:extraction} summarizes extraction on the test split. SigLIP outperforms CLIP on every attribute and orders its confidences better (lower AURC), which is why it is the primary extractor. Zero-shot material recognition is near chance for both models, so the development-tuned rule makes SigLIP abstain on material for 98\% of items (CLIP always abstains). Selective accuracy on the test split is 0.928 for category and 0.827 for color. The color figure falls short of the 0.90 development target, which indicates that thresholds fitted on only 40 development items transfer imperfectly for the hardest stated attribute; this residual error is the source of the 0.147 color hallucination rate reported below.
 
 \begin{table}[t]
-\caption{Extraction on the test split ($n=200$). Threshold $t^{*}$ is frozen on the development split; coverage and selective accuracy are measured at that threshold.}
+\caption{Extraction on the test split ($n=200$). Threshold $t^{*}$ is frozen on the development split; coverage and selective accuracy are measured at that threshold. CI: confidence interval; AURC: area under the risk-coverage curve; Sel.\ acc.: selective accuracy.}
 \label{tab:extraction}
 \centering
 \small
@@ -273,7 +273,7 @@ Condition & Category & Color & Material \\
 \centering
 \begin{tikzpicture}
 \begin{axis}[
-  ybar, bar width=5pt, width=\textwidth, height=4.6cm,
+  ybar, bar width=5pt, width=\textwidth, height=4.6cm, area legend, axis x line*=bottom, axis y line*=left,
   symbolic x coords={A,A-F,B,B-Abs,APG,C,C-Mask}, xtick=data,
   ymin=0, ymax=0.72, ylabel={Hallucination rate},
   ymajorgrids, grid style={gray!25},
@@ -329,6 +329,7 @@ In \cond{B}, every hallucination is an extraction error (Table~\ref{tab:origins}
 \label{tab:origins}
 \centering
 \small
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{@{}llcccc@{}}
 \toprule
 Writer & Attribute & EP & GD & GF & Extraction share \\
@@ -349,6 +350,7 @@ Yes (Table~\ref{tab:abst}). With Qwen2.5, leakage and inflation are zero for eve
 \label{tab:abst}
 \centering
 \small
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{@{}llcc@{}}
 \toprule
 Condition & Writer & Leakage (max) & Inflation (max) \\
