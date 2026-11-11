@@ -28,10 +28,16 @@
 \newif\ifanonymous
 \anonymoustrue
 
-\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}
+\renewcommand{\arraystretch}{0.93}
+\setlength{\abovedisplayskip}{5pt plus 2pt minus 2pt}
+\setlength{\belowdisplayskip}{5pt plus 2pt minus 2pt}
+\setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}
+\setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}
 
+\linespread{0.985}
 \begin{document}
 
 \title{Extract, Abstain, Generate: Tracing Attribute Hallucination to Its Source in Image-Grounded Product Descriptions}
@@ -53,49 +59,49 @@
 \maketitle
 
 \begin{abstract}
-Vision-language models are increasingly used to write e-commerce product descriptions, yet they often state product attributes that the image does not support. Grounding generation on attributes extracted by a separate classifier is a common remedy, but it leaves two questions open: when a grounded description is still wrong, which stage caused the error, and does an extractor's abstention survive the language model? This paper introduces an evaluation framework that attributes every category, color and material mention in a generated description to a vision-stage or a language-stage origin, using seven controlled conditions that include a gold-evidence oracle and a masked-attribute leakage probe. On a new benchmark of 240 double-annotated apparel images that includes Indian ethnic wear, two instruction-tuned language models of seven billion parameters add no attribute errors when given structured evidence: all hallucinations in the grounded pipeline originate in extraction. Threshold-based abstention also survives the language stage (leakage of at most 0.5\% on extractor evidence) and removes material hallucination (0.58 to 0.00), although only because the extractor abstains on material for 98\% of items; category and color hallucination fall from 0.46 to 0.07 and from 0.45 to 0.15 relative to image-only models. A slot-based generator with a formal no-invention guarantee makes 70\% fewer unsupported claims per description but is rated far less fluent by human raters, whereas free-text generation with abstention is judged publishable as written for 93\% of descriptions. The labels and an offline, deployable system are released.
+Vision-language models are increasingly used to write e-commerce product descriptions, yet they often state product attributes that the image does not support. Grounding generation on attributes extracted by a separate classifier is a common remedy, but it leaves two questions open: when a grounded description is still wrong, which stage caused the error, and does an extractor's abstention survive the language model? This paper introduces an evaluation framework that attributes every category, color and material mention in a generated description to a vision-stage or a language-stage origin, using seven controlled conditions that include a gold-evidence oracle and a masked-attribute leakage probe. On a new benchmark of 240 double-annotated apparel images that includes Indian ethnic wear, two instruction-tuned language models of seven billion parameters add no attribute errors when given structured evidence: all hallucinations in the grounded pipeline originate in extraction.
+Threshold-based abstention also survives the language stage (leakage of at most 0.5\% on extractor evidence) and removes material hallucination (0.58 to 0.00), although only because the extractor abstains on material for 98\% of items; category and color hallucination fall from 0.46 to 0.07 and from 0.45 to 0.15 relative to image-only models. A slot-based generator with a formal no-invention guarantee makes 70\% fewer unsupported claims per description but is rated far less fluent by human raters, whereas free-text generation with abstention is judged publishable as written for 93\% of descriptions. The labels and an offline, deployable system are released.
 \keywords{Hallucination \and Vision-language models \and Selective prediction \and Abstention \and Grounded generation \and E-commerce \and Product descriptions}
 \end{abstract}
 
 % -------------------------------------------------------------------------------------
 \section{Introduction}
-Online marketplaces must describe millions of products, and sellers increasingly generate listing text from product photographs with vision-language models (VLMs) such as LLaVA~\cite{liu2023llava,liu2024llava15}. These models are fluent but unreliable: they call a kurta a dress, a navy shirt black, or a plain t-shirt ``100\% cotton''. In commerce such \emph{attribute hallucinations} have direct costs, since buyers filter by exactly these attributes and return items that do not match.
+Marketplaces need to catalog millions of items, and increasingly use visual-linguistic models (VLMs), like LLaVA~\cite{liu2023llava,liu2024llava15}, to produce descriptions of items based on product images. The models are competent, yet erroneous: They refer to a kurta as a dress, a navy colored shirt as a black one, or a plain t-shirt as ``100\% cotton.'' For instance, such attribute hallucinations come at an actual cost, because consumers rely on these exact attributes for filtering their search results.
+One way to counter hallucinations is through \emph{grounding}: structure extraction with a dedicated classifier followed by writing with an LLM. Grounding transforms the question ``Does the model hallucinate?'' into two different and more concrete questions. One: When a grounded description is false, is the fault in the extraction process (vision stage) or in the writing process (language stage)? Two: If the extractor can produce \unk{} when it is unsure about its classification, does the writer maintain the uncertainty, or does he fill the void with a reasonable guess? Current benchmarks for model hallucination measure the output of a single model~\cite{rohrbach2018chair,li2023pope}.
 
-A natural remedy is \emph{grounding}: first extract structured attributes with a dedicated classifier, then let a large language model (LLM) write from them. Grounding changes the question from ``does the model hallucinate?'' to two sharper ones. First, when a grounded description is wrong, is the error introduced by the extractor (vision stage) or by the writer (language stage)? Second, if the extractor may output \unk{} when uncertain, does the writer preserve that abstention or fill the gap with a plausible guess? Existing hallucination benchmarks score the final text of a single model~\cite{rohrbach2018chair,li2023pope} and cannot answer either question.
 
-\smallskip\noindent\textbf{Research gap and objective.} Prior work measures whether a model hallucinates but not where in a two-stage pipeline the hallucination arises, and it does not test whether an abstention decision made by one component is respected by the next. The objective of this study is to trace every attribute error in an image-grounded product description to its stage of origin and to measure whether abstention propagates through the language model, in a controlled design in which only the writer's input varies, scored against human labels.
+\noindent\textbf{Research gap and objective.} Previous work checks whether the model is hallucinating but not at what stage in a two-stage process the hallucination occurs, and whether the abstention signal generated by one part of the model is adhered to by the next. The aim of this research is to track all the attribute errors in an image-based product description back to their origin stage and to check whether abstention flows through the language model, using an experimental setup where the only variation in the writing is the input from the writer.
 
-\smallskip\noindent\textbf{Contributions.}
-\begin{itemize}
-\item \textbf{Stage-attributed hallucination analysis.} An outcome and origin taxonomy assigns every attribute error to the extractor (extraction passed, EP) or to the writer, either deviating from correct evidence (generator deviation, GD) or fabricating an abstained attribute (generator fabrication, GF), with a gold-evidence oracle as control.
-\item \textbf{Abstention-propagation metrics.} \emph{Leakage} and \emph{inflation} quantify whether abstention survives the language model, on thresholded extractor output and on a masked-gold probe.
-\item \textbf{Abstention-Preserving Generation (APG).} A slot-and-render generator that, relative to the claim extractor, never states an attribute value other than the evidence, evaluated against free-text generation with automatic and human measures.
-\item \textbf{A double-annotated benchmark} of 240 apparel images (13 categories including kurta and saree, 12 colors, 8 materials) with adjudicated labels and human ratings.
-\item \textbf{Findings and a deployable system.} Two LLM families add no attribute errors given structured evidence, and a verify-and-repair pipeline built on this finding runs offline on a central processing unit (CPU).
+\noindent\textbf{Contributions.}
+\begin{itemize}\setlength{\itemsep}{0pt}\setlength{\topsep}{2pt}\setlength{\parsep}{0pt}
+\item \textbf{Hallucination of attributes by stage classification}. Outcome and origin classification categorizes all attribute errors into extraction (extraction pass, EP) or writer error, generator deviation from truth (generator deviation, GD) or generator fabrication of an abstained attribute (generator fabrication, GF), using gold evidence as the oracle.
+\item \textbf{Abstention-propagation evaluation metrics.} \emph{Leakage} and \emph{inflation} evaluate whether abstention propagates through the language model, in the thresholded output of the extractor and a gold-masked probe.
+\item \textbf{Abstention-Preserving Generation (APG)}. Slot-and-render model that, compared to the claim extractor, never produces an attribute value except for the evidence, evaluated via free-text generation with automated and human metrics.
+\item \textbf{A double-annotated benchmark} of 240 images of clothing (13 types like kurta and saree, 12 colors, 8 materials) with adjudicated annotations and human scores.
+\item \textbf{Results and a working system.} Two LLM architectures do not introduce any attribute mistakes given structured information, and a pipeline of verification and correction designed based on this result can operate offline using a CPU.
 \end{itemize}
-To the best of the surveyed literature, this is the first study that decomposes attribute hallucination in image-grounded generation by stage and measures whether abstention propagates through the language model.
+As far as the authors know, this is the first paper to investigate the decomposition of attribute hallucinations in image-driven generation and study how abstention propagates within the language model.
 
-\smallskip\noindent\textbf{Motivation and paper organization.} The motivation is practical: a marketplace that deploys grounded generation needs to know whether to invest in a better classifier, a better writer or a stricter generation constraint, and an end-to-end hallucination rate cannot answer that question. The remainder of the paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:method} describes the experimental conditions, the extractor with threshold-based abstention and the APG generator. Section~\ref{sec:eval} defines the evaluation framework, and Section~\ref{sec:setup} the data, annotation and models. Section~\ref{sec:results} reports results for three research questions (RQ1 to RQ3), Section~\ref{sec:discussion} discusses deployment, Section~\ref{sec:limits} lists limitations, and Section~\ref{sec:conclusion} concludes.
+\noindent \textbf{Motivation and outline of the paper.} The motivation is practical: a market place using grounded generation must decide whether to improve its classifier, its writing component or generation constraints, and an end-to-end hallucination rate cannot help there. The rest of the paper is structured as follows. Section~\ref{sec:related} provides background on the literature. Section~\ref{sec:method} provides details of the experimental conditions, the extractor with threshold abstention and the APG generator. Section~\ref{sec:eval} provides the evaluation framework and Section~\ref{sec:setup} the data and experimental setup. Results are reported in Section~\ref{sec:results}, which answers three research questions (RQ1 to RQ3). Deployment is discussed in Section~\ref{sec:discussion}. Limitations are listed in Section~\ref{sec:limits}.
 
 % -------------------------------------------------------------------------------------
 \section{Related Work}\label{sec:related}
-\textbf{Hallucination in vision-language models.} Rohrbach et al.~\cite{rohrbach2018chair} introduced the CHAIR metric to count objects mentioned in captions that are absent from the image; POPE~\cite{li2023pope} probes large VLMs with yes/no questions and shows that object hallucination persists in instruction-tuned models such as LLaVA~\cite{liu2023llava}. Surveys~\cite{ji2023survey} document hallucination across generation tasks. AMBER~\cite{wang2023amber} extends evaluation to object attributes and relations, FaithScore~\cite{jing2024faithscore} verifies atomic claims in free-form answers, and visual contrastive decoding~\cite{leng2024vcd} mitigates hallucination inside a single model. These works evaluate or repair one model end to end, whereas the present study decomposes a two-stage pipeline and asks which stage produced each attribute error.
+\textbf{Hallucinations in vision-language models.} The CHAIR score~\cite{rohrbach2018chair} was introduced for counting objects mentioned in captions that are not present in the image; POPE~\cite{li2023pope} interrogates large vision-language models with yes/no questions, revealing that object hallucinations still occur even in instruction-tuned models like LLaVA~\cite{liu2023llava}. Surveys~\cite{ji2023survey} reveal hallucinations in generative models. AMBER~\cite{wang2023amber} tests attributes and relationships, FaithScore~\cite{jing2024faithscore} tests atomic statements within free-form responses, and visual contrastive decoding~\cite{leng2024vcd} prevents hallucinations within a single vision-language model. All of the above works test or fix a single model end-to-end, but this paper decomposes a two-stage pipeline and investigates which component made an error for each attribute.
 
-\textbf{Faithfulness to structured input.} Data-to-text research has long observed that neural generators state facts absent from their input records~\cite{wiseman2017challenges} and has proposed table-aware metrics such as PARENT~\cite{dhingra2019parent}. Claim-level factuality metrics such as FActScore~\cite{min2023factscore} and LLM-as-a-judge evaluation~\cite{zheng2023judging} score individual supported and unsupported statements. The present framework combines a deterministic attribute checker with a validated LLM judge for non-attribute claims.
+\textbf{Attribute extractor faithfulness to structured input.} Data-to-text generation has long acknowledged the problem of neural generators expressing facts that do not appear in their input records~\cite{wiseman2017challenges} and has proposed table-aware metrics such as PARENT~\cite{dhingra2019parent}. Fact-level factuality metrics such as FActScore~\cite{min2023factscore} and LLM-as-a-judge evaluation~\cite{zheng2023judging} evaluate the truthfulness of individual supported and unsupported claims. The current approach incorporates a deterministic attribute checker and a LLM-based judge for non-attribute statements.
 
-\textbf{Selective prediction.} Selective classification abstains below a confidence threshold to trade coverage for accuracy~\cite{geifman2017selective}. Zero-shot dual encoders such as CLIP (Contrastive Language-Image Pre-training)~\cite{radford2021clip} and SigLIP (Sigmoid Loss for Language-Image Pre-training)~\cite{zhai2023siglip} provide scores that are calibrated enough to apply this idea to attribute extraction. Abstention in language models has been surveyed extensively~\cite{wen2025abstention}, largely as a property of a single model's answers. Whether an abstention decision made by one component survives downstream generation has not been measured in the surveyed literature.
+\textbf{Selective prediction.} Selective classifiers abstain when predictions' confidences fall below a certain threshold to favor accuracy over coverage~\cite{geifman2017selective}. Zero-shot dual encoders such as CLIP (Contrastive Language-Image Pre-training)~\cite{radford2021clip} and SigLIP (Sigmoid Loss for Language-Image Pre-training)~\cite{zhai2023siglip} offer scores that can be sufficiently calibrated to implement this concept into attribute extraction. Language model abstention has been thoroughly reviewed~\cite{wen2025abstention}, mostly because of properties of a single model's predictions. How such an abstention decision by one component is retained in the downstream generation process has not been evaluated in the surveyed literature.
 
-\textbf{Product description generation.} E-commerce description generators condition on product attributes or knowledge bases~\cite{chen2019kobe} and assume that the attributes are correct. Attribute value extraction from product text is a large research area, with datasets such as MAVE~\cite{yang2022mave}; the present study instead extracts attributes from images and asks what happens to the generated text when they are wrong or the extractor is uncertain.
-
+\textbf{Generating product descriptions.} Online product description generation models make assumptions about the accuracy of the input attributes or the knowledge bases~\cite{chen2019kobe}. Product attribute values extraction based on textual information is a wide research domain where there exist MAVE~\cite{yang2022mave} dataset; however, in this study, the product attributes are extracted using images.
 % -------------------------------------------------------------------------------------
 \section{Methodology}\label{sec:method}
 
 \subsection{Experimental Conditions}
-A description is generated for each product image under seven conditions (Fig.~\ref{fig:pipeline}): image-only generation with a generic prompt (\cond{A}) or a faithfulness prompt (\cond{A-F}); extraction followed by free-text writing with forced evidence (\cond{B}) or with abstention (\cond{B-Abs}); extraction followed by slot-based writing and a renderer (\cond{APG}); and gold labels as evidence, complete (\cond{C}) or with one attribute masked (\cond{C-Mask}). Conditions \cond{B}, \cond{B-Abs}, \cond{C} and \cond{C-Mask} use the same prompt and differ only in the values of the evidence object $e=(e_{\text{cat}},e_{\text{col}},e_{\text{mat}})$, so differences in errors are attributable to the evidence. The writer never sees confidence scores.
+For every product image, a description is produced under seven different experimental conditions (Fig.~\ref{fig:pipeline}): image generation alone with a generic prompt (\cond{A}), or a faithfulness prompt (\cond{A-F}); extraction followed by forced free-text writing using the extracted evidence (\cond{B}) or abstaining from writing based on extracted evidence (\cond{B-Abs}); extraction followed by slot writing with a renderer (\cond{APG}); and using gold labels as evidence: either complete evidence (\cond{C}) or partially hidden evidence (\cond{C-Mask}). Conditions \cond{B}, \cond{B-Abs}, \cond{C} and \cond{C-Mask} all employ the same prompt and just vary in the values of the evidence object $e=(e_{\text{cat}},e_{\text{col}},e_{\text{mat}})$.
 
-\begin{figure}[t]
+\begin{figure}[!htb]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{0.86\textwidth}{!}{%
 \begin{tikzpicture}[
   box/.style={draw, rounded corners=3pt, align=center, minimum height=1.1cm, inner sep=3pt, font=\small},
   img/.style={box, fill=gray!12},
@@ -105,8 +111,8 @@ A description is generated for each product image under seven conditions (Fig.~\
   arr/.style={-{Stealth[length=2.4mm]}, thick},
   lab/.style={font=\footnotesize, align=center, text=black!75}
 ]
-\node[img] (ia) at (0,4.6) {Product\\image};
-\node[box] (vlm) at (3.2,4.6) {VLM\\(LLaVA, Qwen2-VL)};
+\node[img] (ia) at (0,3.8) {Product\\image};
+\node[box] (vlm) at (3.2,3.8) {VLM\\(LLaVA, Qwen2-VL)};
 \draw[arr] (ia) -- (vlm);
 \node[img] (ib) at (0,2) {Product\\image};
 \node[ext] (ex) at (3.2,2) {SigLIP\\extractor};
@@ -115,30 +121,31 @@ A description is generated for each product image under seven conditions (Fig.~\
 \draw[arr] (ib) -- (ex);
 \draw[arr] (ex) -- (ev);
 \draw[arr] (ev) -- (wr);
-\node[gold] (gl) at (6.9,-0.5) {Gold labels\\(human)};
+\node[gold] (gl) at (6.9,-0.4) {Gold labels\\(human)};
 \draw[arr] (gl) -- node[right, lab] {\cond{C}: as is\\\cond{C-Mask}: one attribute\\set to \unk} (ev);
 \node[outbox] (ds) at (14.0,2) {Description\\(\cond{APG}: slots,\\then renderer)};
 \draw[arr] (wr) -- (ds);
 \draw[arr] (vlm.east) -| node[above, pos=0.2, lab] {\cond{A}: generic prompt;\ \cond{A-F}: faithfulness prompt} (ds.north);
-\node[box, fill=orange!18] (ce) at (14.0,-0.5) {Claim extractor,\\origin tagging};
+\node[box, fill=orange!18] (ce) at (14.0,-0.4) {Claim extractor,\\origin tagging};
 \draw[arr] (ds) -- node[left, lab] {EP / GD / GF} (ce);
 \end{tikzpicture}}
 \caption{Pipeline and experimental conditions. The extractor's scores either pass as forced evidence (\cond{B}) or are thresholded into \unk{} (\cond{B-Abs}, \cond{APG}). Image-only baselines (\cond{A}, \cond{A-F}) bypass extraction; the oracle (\cond{C}) and the leakage probe (\cond{C-Mask}) replace extraction with human labels. Every hallucinated attribute is traced to its origin.}
 \label{fig:pipeline}
 \end{figure}
 
-\subsection{Zero-Shot Extraction with Threshold-Based Abstention}
-For attribute $a$ with label set $\mathcal{L}_a$, each label is described by four prompt templates; their text embeddings are $\ell_2$-normalized, averaged and re-normalized into $\mathbf{t}_y$. Given image embedding $\mathbf{v}$, label probabilities are $p(y\mid\mathbf{v})=\mathrm{softmax}_y(s\,\mathbf{v}^\top\mathbf{t}_y)$ with the model's logit scale $s$, and confidence is $c_a=\max_y p(y\mid\mathbf{v})$. Forced evidence is the arg-max label. For abstention, the threshold is chosen on a development split only, as the smallest value that maximizes coverage subject to a selective-accuracy target $\tau$ (Eq.~\ref{eq:thresh}):
+\subsection{Zero-Shot Extraction with Threshold-Driven Abstention}
+For attribute $a$ with labels $\mathcal{L}_a$, each label has four prompt templates associated with it; their corresponding text embeddings are $\ell_2$ normalized, averaged, and re-normalized to obtain $\mathbf{t}_y$. For an image embedding $\mathbf{v}$, the label scores can be defined as $p(y\mid\mathbf{v})=\mathrm{softmax}_y(s\,\mathbf{v}^\top\mathbf{t}_y)$ using the logit scale $s$ from the model. The confidence score for attribute $a$ is $c_a=\max_y p(y\mid\mathbf{v})$. The forced evidence label is the arg-max label. The threshold is decided only on the development set by maximizing coverage under the constraint of selective accuracy $\tau$ (Equation \ref{eq:thresh}):
 \begin{equation}
 t_a^{*}=\min\{\,t : \mathrm{Acc}(\{i : c_{a,i}\geq t\})\geq\tau\,\},\qquad \tau=0.90.
 \label{eq:thresh}
 \end{equation}
-The evidence is set to $e_a=\unk$ whenever $c_a<t_a^{*}$. If no threshold attains $\tau$, the extractor always abstains on $a$. Equation~\ref{eq:thresh} therefore trades coverage (the share of items for which a value is stated) against the precision of the values that are stated.
+The evidence $e_a=\unk$ is always assigned when $c_a < t_a^*$. Should no threshold ever meet $\tau$, the extractor will abstain from providing any value on $a$. Hence, Eq.~\ref{eq:thresh} balances coverage (percentage of items provided with a value) with the precision of those values.
 
 \subsection{Abstention-Preserving Generation}
-APG removes attribute values from the writer's control. The LLM is offered placeholders \texttt{\{category\}}, \texttt{\{color\}} and \texttt{\{material\}} only for attributes whose evidence is known, and is instructed to write placeholders instead of values. A deterministic renderer (Algorithm~\ref{alg:apg}) then post-processes the output.
+In APG, generation of attribute values is outside the writer's control. LLM is provided with placeholders \texttt{\{category\}}, \texttt{\{color\}} and \texttt{\{material\}} only for those attributes for which evidence is known, and is told to use placeholders in place of values. The output is post-processed using a deterministic renderer (Algorithm~\ref{alg:apg}).
 
-\begin{algorithm}[t]
+\begin{algorithm}[!htb]
+\footnotesize
 \caption{APG renderer}
 \label{alg:apg}
 \begin{algorithmic}[1]
@@ -155,60 +162,60 @@ APG removes attribute values from the writer's control. The LLM is offered place
 \end{algorithm}
 
 \begin{proposition}
-For any evidence $e$ and any LLM output $y$, let $D_a(r)$ be the set of values of attribute $a$ that the claim extractor finds in the rendered text $r$. Then $D_a(r)\subseteq\{e_a\}$ if $e_a$ is known and $D_a(r)=\emptyset$ if $e_a=\mathrm{unknown}$.
+For any evidence $e$ and any LLM output $y$, let $D_a(r)$ be the set of values of attribute $a$ claimed by the claim extractor for the rendered text $r$. Then $D_a(r)\subseteq\{e_a\}$ if $e_a$ is known, and $D_a(r)=\emptyset$ if $e_a=\mathrm{unknown}$.
 \end{proposition}
 \begin{proof}
-Every sentence kept in line~4 of Algorithm~\ref{alg:apg} has passed the verification test, which rejects any sentence whose mentions differ from $e$ or concern an abstained attribute; the fallback template is built only from known evidence values. Hence no returned sentence violates the condition.
+Each sentence that survives line~4 of Algorithm~\ref{alg:apg} passes the verification step, which discards all sentences where the mentioned value deviates from $e$ or an abstained attribute is being mentioned; the fall-back template uses only known evidence values. Therefore, none of the returned sentences violate the property.
 \end{proof}
-The guarantee is relative to the claim extractor (Section~\ref{sec:claims}), whose precision is 1.00 on validation data. It was also property-tested on 25 hand-written adversarial LLM outputs.
+This guarantee depends on the claim extractor (Section~\ref{sec:claims}) with the accuracy of 1.00 on the validation dataset. The guarantee was also validated against 25 hand-written adversarial LLM outputs.
 
 % -------------------------------------------------------------------------------------
 \section{Evaluation Framework}\label{sec:eval}
 \subsection{Attribute Claim Extraction}\label{sec:claims}
-A deterministic lexicon extractor identifies every category, color and material mention in a description using longest-match precedence (``t-shirt'' never also counts as ``shirt''), word boundaries, plural and hyphen normalization, exclusion of styling clauses (``pair it with blue jeans'') and of colors of logos, prints and trims, and hedge detection. Category is the first mention; color and material are value sets. Against labels on which two annotators agree (60 development descriptions), it reaches precision 1.00 and recall 0.95 to 1.00 per attribute.
+An extractor based on deterministic lexicon matches each mention of category, color and material in a description using longest match priority ('t-shirt' never being interpreted as 'shirt'), proper word boundaries, plural and hyphen normalization, ignoring stylistic clauses ('pair it with blue jeans') and coloring of logos, prints and trims, and hedge detection. The category is always the first mention; the color and material are sets of values. It achieves precision 1.00 and recall 0.95-1.00 for attributes against labels agreed upon by two annotators (60 development descriptions).
 
 \subsection{Outcomes and Origins}
-The unit of analysis is a (description, attribute) pair with gold label $g$, evidence $e$ (absent for \cond{A} and \cond{A-F}) and stated values $D$. A pair is \emph{correct} if $D=\{g\}$ for a gold label, a \emph{hallucination} if $D\neq\emptyset$ and $D\neq\{g\}$ (any statement when $g=\unk$), an \emph{omission} if $D=\emptyset$ while a label was available, and a \emph{preserved abstention} if $D=\emptyset$ and $e=\unk$. Each hallucination with evidence receives exactly one origin, defined in Eqs.~\ref{eq:ep}--\ref{eq:gf}:
+The unit of analysis is a (description, attribute) pair with a gold label $g$, evidence $e$ (which is not available for \cond{A} and \cond{A-F}), and stated values $D$. A pair is \emph{correct} when $D=\{g\}$ for a gold label, a \emph{hallucination} when $D\neq\emptyset$ and $D\neq\{g\}$ (any value when $g=\unk$), an \emph{omission} when $D=\emptyset$ although a label was available, and a \emph{preserved abstention} when $D=\emptyset$ and $e=\unk$. Every hallucination with evidence gets exactly one origin, as defined in Eqs.~\ref{eq:ep}--\ref{eq:gf}:
 \begin{align}
 \text{EP}&: e\in\mathcal{L},\ D=\{e\},\ e\neq g \quad\text{(extraction passed)}\label{eq:ep}\\
 \text{GD}&: e\in\mathcal{L},\ D\neq\{e\} \quad\text{(generator deviation)}\label{eq:gd}\\
 \text{GF}&: e=\unk,\ D\neq\emptyset \quad\text{(generator fabrication)}\label{eq:gf}
 \end{align}
-EP (Eq.~\ref{eq:ep}) is a vision-stage error: the writer copied evidence that was already wrong. GD (Eq.~\ref{eq:gd}) and GF (Eq.~\ref{eq:gf}) are language-stage errors: the writer departed from correct evidence, or filled an attribute that the extractor had abstained on. Because \cond{C} supplies perfect evidence, its GD rate isolates the writer's intrinsic deviation; the origin test is a bootstrap interval for $\mathrm{GD}(\cond{B})-\mathrm{GD}(\cond{C})$.
+EP (Eq.~\ref{eq:ep}) is a vision-stage error: The writer reproduced the wrong evidence. GD (Eq.~\ref{eq:gd}) and GF (Eq.~\ref{eq:gf}) are language-stage errors: the writer deviated from the right evidence, or filled attributes that were abstained from by the extractor. Since \cond{C} provides perfect evidence, the GD error rate for \cond{C} reflects only the writer's deviation; the origin test is a bootstrap confidence interval for $\mathrm{GD}(\cond{B}) - \mathrm{GD}(\cond{C})$.
 
 \subsection{Abstention Propagation}
-For pairs with evidence, leakage (Eq.~\ref{eq:leak}) is the share of abstained attributes that the writer nevertheless states, and inflation (Eq.~\ref{eq:infl}) is the share of known attributes that the writer drops or hedges:
+In pairs where there is evidence, leakage (Eq.~\ref{eq:leak}) is the percentage of abstained attributes that the writer still mentions, and inflation (Eq.~\ref{eq:infl}) is the percentage of non-abstained attributes that the writer omits or hedges:
 \begin{align}
 \mathrm{Leak}&=\frac{|\{e=\unk,\ D\neq\emptyset\}|}{|\{e=\unk\}|},\label{eq:leak}\\
 \mathrm{Infl}&=\frac{|\{e\in\mathcal{L},\ D=\emptyset\ \lor\ \text{hedged}\}|}{|\{e\in\mathcal{L}\}|}.\label{eq:infl}
 \end{align}
-Low leakage means abstention is respected; low inflation means the writer does not become over-cautious. In \cond{C-Mask}, leakage is computed on the masked attribute only, where the true value is known but hidden from the writer.
+The low leakage indicates that abstinence is honored; the low inflation indicates that the author does not get too cautious. In \cond{C-Mask}, leakage is calculated for the masked attribute only, since the value is known and masked from the writer.
 
-\subsection{Non-Attribute Claims, Human Judgment and Statistics}
-An LLM judge (Qwen2.5-7B) lists unsupported claims other than category, color and material (fit, function, occasion, brand, and so on). The Unsupported Claim Rate (UCR) is the mean number of non-subjective unsupported claims per description. The judge over-counts (precision 0.31, recall 0.68 against a human labeler on 70 test descriptions), so absolute UCR values are upper bounds, although the judge and the human both rank \cond{APG} lowest. Human raters scored descriptions from \cond{A-F}, \cond{B-Abs} and \cond{APG} on fluency, faithfulness and usefulness (1--5) and on whether they would publish them as written, blind to condition.
+\subsection{Claims About Non-Attributes, Human Judgment and Statistics}
+An LLM judge (Qwen2.5-7B) provides unsupported claims except for the attributes, category, color and material (fit, functionality, occasions, brand, etc.). The rate of unsupported claims (UCR) is the average number of unsupported claims per description. Since the judge tends to over-predict (precision 0.31, recall 0.68, compared to a human judge on 70 test descriptions), the absolute values of UCRs are upper estimates, although both agree that \cond{APG} has the lowest value. Descriptions from conditions \cond{A-F}, \cond{B-Abs} and \cond{APG} were rated by human judges for fluency, faithfulness and usefulness (1-5) and on whether they would be published as is, blinded to condition.
 
-All rates carry 95\% item-cluster bootstrap intervals (2,000 resamples). Paired comparisons use the exact McNemar test with Holm correction within each attribute and LLM; human ratings use the Wilcoxon signed-rank test; agreement uses Cohen's $\kappa$ and Krippendorff's $\alpha$.
+All rates include 95\% item-cluster bootstrap intervals (2,000 replications). Comparisons across all pairs are based on the exact McNemar test with Holm adjustment within each attribute and LLM; human ratings on the Wilcoxon signed-rank test; agreement measures Cohen's $\kappa$ and Krippendorff's $\alpha$.
 
 % -------------------------------------------------------------------------------------
 \section{Experimental Setup}\label{sec:setup}
 \subsection{Data and Annotation}
-Images come from the Fashion Product Images collection~\cite{aggarwal2019fashion} (a 384$\times$512 copy, since fabric cues are invisible at lower resolution). After filtering to 13 apparel categories and mappable colors (17,162 of 44,072 products), a seeded, category-balanced sample yields 40 development and 200 test items; 16\% of test items are ethnic wear (kurta, saree).
+Image dataset used is \emph{Fashion Product Images}~\cite{aggarwal2019fashion}. This is a 384$\times$512 resolution image (fabric clues being visible in higher resolution). After filtering 13 product categories with mappable colors (17,162 out of 44,072), seeded sampling results in 40 development images and 200 test images; 16\% of test images belong to ethnic wear (kurta and saree).
 
-Two annotators labeled every item independently; category and color were pre-filled from metadata for verification, while material started blank and required a visible cue. After one guideline revision on development data, the guidelines were frozen, and a third annotator adjudicated all disagreements. Test agreement (Cohen's $\kappa$) is 1.00 for category, 0.86 for color and 0.50 for material, reflecting the genuine difficulty of judging fabric from photos; 15.5\% of test items have gold material \unk.
+All images are annotated independently by two annotators. The category and color information are pre-filled from metadata and material information was left blank as it requires visual cue in images. There was only one guideline revision based on development images and the guidelines were frozen after that; the third annotator resolved all the disagreements. Test agreement (Cohen's $\kappa$) for category, color, and material is 1.00, 0.86, and 0.50 respectively. The low agreement of material can be attributed to its intrinsic difficulty; 15.5\% test images have gold material.
 
 \subsection{Models and Configuration}
-The extractors are CLIP ViT-L/14~\cite{radford2021clip} and SigLIP so400m~\cite{zhai2023siglip} (primary, owing to lower development area under the risk-coverage curve, AURC). The VLMs are LLaVA-1.5-7B~\cite{liu2024llava15} (primary) and Qwen2-VL-2B~\cite{wang2024qwen2vl}. The writers are Qwen2.5-7B-Instruct~\cite{yang2024qwen25} (primary) and Mistral-7B-Instruct~\cite{jiang2023mistral}. All seven-billion-parameter models run in 4-bit NormalFloat (NF4) quantization~\cite{dettmers2023qlora} on one 16\,GB T4 graphics processing unit (GPU) with greedy decoding. Prompts and thresholds were hashed and frozen before any test run; nothing was tuned on the test split.
+The extractors are CLIP ViT-L/14~\cite{radford2021clip} and SigLIP so400m~\cite{zhai2023siglip} (main model, due to lower AURC). The vision-language models are LLaVA-1.5-7B~\cite{liu2024llava15} (main) and Qwen2-VL-2B~\cite{wang2024qwen2vl}. The writers are Qwen2.5-7B-Instruct~\cite{yang2024qwen25} (main) and Mistral-7B-Instruct~\cite{jiang2023mistral}. All 7B parameters were trained using 4-bit NormalFloat (NF4)~\cite{dettmers2023qlora} on one 16 GB T4 GPU in greedy decoding. The prompts and thresholds were hashed and frozen prior to each test. Nothing was fine-tuned on the test dataset.
 
 % -------------------------------------------------------------------------------------
 \section{Results and Analysis}\label{sec:results}
 \subsection{Extraction}
-Table~\ref{tab:extraction} summarizes extraction on the test split. SigLIP outperforms CLIP on every attribute and orders its confidences better (lower AURC), which is why it is the primary extractor. Zero-shot material recognition is near chance for both models, so the development-tuned rule makes SigLIP abstain on material for 98\% of items (CLIP always abstains). Selective accuracy on test is 0.928 for category and 0.827 for color; the color figure falls short of the 0.90 target, so thresholds fitted on only 40 development items transfer imperfectly, and this residual error is the source of the 0.147 color hallucination rate reported below.
+Table~\ref{tab:extraction} shows the performance of extraction on the test split. SigLIP beats CLIP on all attributes and orders its confidences better (smaller AURC), hence it is our main extractor. Zero-shot recognition of materials is close to random chance for both methods, therefore the development tuned decision rule causes SigLIP to abstain on materials for 98\% of items (CLIP always abstains). The selective accuracies of the two methods on test are 0.928 for categories and 0.827 for colors; the color figure is less than the 0.90 target, which means that the thresholds tuned using only 40 development items generalize poorly, and the difference is the reason for the 0.147 color hallucination rate shown below.
 
 \begin{table}[!htb]
-\caption{Extraction on the test split ($n=200$). Threshold $t^{*}$ is frozen on the development split; coverage and selective accuracy are measured at that threshold. CI: confidence interval; AURC: area under the risk-coverage curve; Sel.\ acc.: selective accuracy.}
+\caption{Extraction on the test split ($n=200$). Threshold $t^{*}$ is fixed on the development split; coverage and selective accuracy are evaluated at this threshold. CI: confidence interval; AURC: area under the risk-coverage curve; Sel.\ acc.: selective accuracy.}
 \label{tab:extraction}
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{@{}llcccccc@{}}
 \toprule
@@ -229,13 +236,13 @@ SigLIP so400m & category & 0.910 [0.870, 0.950] & 0.022 & 0.501 & 97.0\% & 0.928
 \end{table}
 
 \subsection{Main Results}
-Table~\ref{tab:main} and Fig.~\ref{fig:hr} report hallucination rates. Image-only VLMs are wrong about category or color in about half their descriptions, and a faithfulness prompt helps only color, slightly (Holm-adjusted $p=0.034$). Grounding reduces category hallucination from 0.46 (\cond{A-F}) to 0.07 and color from 0.45 to 0.15 with abstention (exact McNemar test, Holm-adjusted $p=1.3\times10^{-18}$ and $3.7\times10^{-13}$). Forced grounding (\cond{B}) states a material for every item and is wrong 58\% of the time; abstention removes all 116 of these errors ($p=1.2\times10^{-34}$), and also lowers color hallucination from 0.228 to 0.147 ($p=1.8\times10^{-4}$). The VLM material rates of zero reflect silence rather than accuracy: LLaVA mentions material in 0.5\% of descriptions.
+Results on hallucination rates are given in Table~\ref{tab:main} and Fig.~\ref{fig:hr}. Image-only VLM hallucinate about the category or color of the object about half the time, and a faithfulness prompt does not help except for the color of the object (the effect is significant, Holm-adjusted $p=0.034$). Grounding decreases hallucinations of the category from 0.46 (\cond{A-F}) to 0.07, and of color from 0.45 to 0.15 with the abstention mechanism (exact McNemar test, Holm-adjusted $p=1.3\times10^{-18}$ and $3.7\times10^{-13}$). Forced grounding (\cond{B}) describes material for each object and makes mistakes in 58\% cases; abstention eliminates all 116 mistakes ($p=1.2\times10^{-34}$), and also reduces color hallucination rate from 0.228 to 0.147 ($p=1.8\times10^{-4}$). Zero material hallucination rates of VLM mean silence rather than correctness of predictions: LLaVA describes material in 0.5\% of the descriptions.
 
 \begin{table}[!htb]
-\caption{Hallucination rate on the test split (primary configuration), with 95\% bootstrap intervals. \cond{C-Mask} reports hallucination (a wrong value), which is lower than its leakage (Table~\ref{tab:abst}) because a leaked value can still be correct.}
+\caption{Hallucination rate on the test split (primary configuration), with 95\% bootstrap intervals. \cond{C-Mask} reports hallucination (a wrong value), which is smaller than its leakage (Table~\ref{tab:abst}) since a leaked value may be true.}
 \label{tab:main}
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lccc@{}}
 \toprule
@@ -252,11 +259,11 @@ Condition & Category & Color & Material \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[!htb]
 \centering
 \begin{tikzpicture}
 \begin{axis}[
-  ybar, bar width=5pt, width=\textwidth, height=4.0cm, area legend, axis x line*=bottom, axis y line*=left,
+  ybar, bar width=5pt, width=\textwidth, height=2.8cm, area legend, axis x line*=bottom, axis y line*=left,
   symbolic x coords={A,A-F,B,B-Abs,APG,C,C-Mask}, xtick=data,
   ymin=0, ymax=0.72, ylabel={Hallucination rate},
   ymajorgrids, grid style={gray!25},
@@ -304,17 +311,17 @@ C-Mask .000 0 0 \\
 \label{fig:hr}
 \end{figure}
 
-\subsection{RQ1: Where Do Grounded Hallucinations Originate?}
-In \cond{B}, every hallucination is an extraction error: the EP rates are 0.09, 0.23 and 0.58 for category, color and material, while GD and GF are 0.00 for Qwen2.5 on all attributes, an extraction share of 1.00. Mistral produces one GD error (rate 0.005) among 387 hallucinations, an extraction share of 0.991. The origin test confirms that the writer adds no deviation beyond the oracle: $\mathrm{GD}(\cond{B})-\mathrm{GD}(\cond{C})=0.000$ [0.000, 0.000] for Qwen2.5 and at most 0.005 [0.000, 0.015] for Mistral. The two LLM families agree on 99.3\% of per-pair outcomes, so with structured evidence the writer is effectively a faithful copier.
+\subsection{RQ1: Where Do Grounded Hallucinations Arise?}
+In \cond{B}, all hallucinations arise from extraction errors; the EP rates of category, color and material are 0.09, 0.23 and 0.58, and GD and GF are 0.00 for Qwen2.5 in all attributes, which amounts to an extraction ratio of 1.00. Mistral has only one GD error (with a rate of 0.005) in 387 hallucinations, resulting in an extraction ratio of 0.991. Origin analysis shows that there is no deviation added by the writer to the oracle: $\mathrm{GD}(\cond{B})-\mathrm{GD}(\cond{C})=0.000$ [0.000, 0.000] for Qwen2.5 and at most 0.005 [0.000, 0.015] for Mistral. The two groups of LLMs agree in 99.3\% of all pair-based cases, therefore structured evidence means the writer is a faithful copier.
 
-\subsection{RQ2: Does Abstention Survive the Language Model?}
-Yes (Table~\ref{tab:abst}). With Qwen2.5, leakage and inflation are zero for every attribute in both \cond{B-Abs} and \cond{APG}; Mistral leaks at most 0.005 and occasionally drops a known category (inflation 0.031). The only notable leak occurs in \cond{C-Mask}: with the category masked, Qwen2.5 still names a garment in 5\% of descriptions, and all ten leaks state ``jeans'', inferred from denim in the remaining evidence. Leaks are therefore inferences from correlated evidence rather than inventions, which motivates abstaining jointly over correlated attributes in future work.
+\subsection{RQ2: Is Abstention Robust to the Language Model?}
+Yes (Table~\ref{tab:abst}). For Qwen2.5, both \cond{B-Abs} and \cond{APG} have no leakage and inflation for each attribute; Mistral is prone to leaking at most 0.005 and dropping at least one known category (inflation 0.031). The only significant leakage occurs for \cond{C-Mask}: despite having a masked category, Qwen2.5 still labels a garment in 5\% of the descriptions, and all ten of those leaks label ``jeans'', inferred from ``denim'' in the rest of the evidence.
 
 \begin{table}[!htb]
 \caption{Abstention propagation: leakage and inflation (SigLIP evidence); the attribute with the maximum value is in parentheses.}
 \label{tab:abst}
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{@{}llcc@{}}
 \toprule
@@ -330,14 +337,14 @@ Condition & Writer & Leakage (max) & Inflation (max) \\
 \end{tabular}
 \end{table}
 
-\subsection{RQ3: Does APG Help Without Hurting Quality?}
-APG matches \cond{B-Abs} on attribute hallucination (both receive identical evidence and both copy it) and cuts unsupported non-attribute claims from 0.57 to 0.17 per description, a reduction of 70\% that is not normalized for description length (Table~\ref{tab:human}; see Section~\ref{sec:limits}); its renderer fell back to the template for 6\% of items with Qwen2.5 and 2\% with Mistral. Human raters, however, strongly prefer free text: \cond{B-Abs} scores 4.30, 4.37 and 4.15 on fluency, faithfulness and usefulness, against 1.67, 2.17 and 1.72 for APG (Wilcoxon, Holm $p<10^{-4}$ on every scale), and 93\% of \cond{B-Abs} descriptions would be published as written. The terse, templated sentences of APG are penalized even on faithfulness, below the error-prone \cond{A-F} baseline ($p=0.012$). Rater agreement is high for fluency (Krippendorff's $\alpha=0.88$) and usefulness (0.81) and moderate for faithfulness (0.57).
+\subsection{RQ3: Is APG Beneficial without Compromising Quality?}
+APG is equivalent to \cond{B-Abs} in terms of attribute hallucination (both get the same evidence and both copy it) while decreasing unsupported non-attribute statements from 0.57 to 0.17 per description, which is a decrease of 70\%, not taking into account the description length (Table~\ref{tab:human}, see Section~\ref{sec:limits}), and its template renderer was used by 6\% of the items with Qwen2.5 and 2\% of the items with Mistral. Yet, humans greatly favor free-text descriptions: \cond{B-Abs} gets 4.30, 4.37 and 4.15 points for fluency, faithfulness and usefulness, respectively, compared to 1.67, 2.17 and 1.72 points for APG (Wilcoxon, Holm $p<10^{-4}$ on all scales) with 93\% of \cond{B-Abs} descriptions publishable ``as is''. The brief, templated descriptions generated by APG score lower even in terms of faithfulness than the erroneous \cond{A-F} baseline ($p=0.012$). Krippendorff's $\alpha$ is 0.88 and 0.81 for fluency and usefulness, respectively, and 0.57 for faithfulness.
 
 \begin{table}[!htb]
 \caption{Unsupported non-attribute claims (UCR) and human evaluation (30 items, mean of 2 raters, 95\% bootstrap interval). ``Publish'' is the share of descriptions that raters would publish as written.}
 \label{tab:human}
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{@{}lcccccc@{}}
 \toprule
@@ -350,24 +357,24 @@ Condition & UCR & Fluency & Faithfulness & Usefulness & Publish \\
 \end{tabular}
 \end{table}
 
-\subsection{Regional Garments}
-Image-only VLMs fail most on ethnic wear: LLaVA's category hallucination rate is 0.75 (\cond{A}) and 0.88 (\cond{A-F}) on kurtas and sarees (32 items) against 0.39 and 0.38 on western garments (168 items), and 22 of its 24 category errors on these items call them dresses. SigLIP classifies their category perfectly (1.000 against 0.893 on western garments), so grounding closes the gap (\cond{B-Abs} category rate 0.03 against 0.11), although multicolored ethnic garments remain harder for color (SigLIP accuracy 0.621 against 0.800; \cond{B-Abs} color rate 0.16 against 0.07).
+\subsection{Local Wear}
+Category hallucination by image-only VLMs is highest for ethnic clothes: 0.75 (\cond{A}) and 0.88 (\cond{A-F}) for kurtas and sarees (32 images) compared to 0.39 and 0.38 for western clothes (168 images); also, out of the 24 category mistakes made by LLaVA on the former type, 22 classify them as dresses. Category classification of SigLIP is perfect (1.000 vs 0.893 for western clothes), thus grounding significantly reduces the gap (\cond{B-Abs} category classification rate of 0.03 vs 0.11), although multicolor ethnic clothes still pose more challenges in terms of color (\cond{B-Abs} color rate of 0.16 vs 0.07).
 
 % -------------------------------------------------------------------------------------
 \section{Discussion and Deployment}\label{sec:discussion}
-\textbf{Fix perception, not the writer.} Given structured evidence, instruction-tuned seven-billion-parameter writers neither deviate from nor fabricate attributes, so attribute faithfulness in grounded generation is bounded by the extractor. Effort is better spent on improving and calibrating perception than on constraining or replacing the LLM.
+\textbf{Fix perception, not the writer.} With structured data, instructions-tuned 7 billion parameter writers do not wander away from or create attributes; therefore, faithful generation of attributes is limited to the extractor. It is more productive to focus efforts on refining perception.
 
-\textbf{Abstention is cheap but costs coverage.} Thresholds tuned on only 40 labeled items removed every material error on test and transferred to two writer families, but material is rarely stated, because zero-shot extractors cannot read fabric reliably from catalogue photos.
+\textbf{Abstinence is inexpensive but costly for coverage.} Thresholds tuned to 40 labeled items identified all material errors on test data and transferred to two writer families, but materials are seldom mentioned because zero-shot extractors cannot read fabric from catalogue photos.
 
-\textbf{Guarantees versus readability.} Hard constraints appear to remove most unsupported free-text claims (70\% fewer per description, subject to the caveats in Section~\ref{sec:limits}) but produce text that readers reject. Free-text generation with abstention, followed by verification and repair, is therefore recommended, since it keeps the attribute guarantee only where it is needed. This design is implemented as \appname: SigLIP extraction with the frozen thresholds, a 1.5-billion-parameter writer, and the claim extractor as a verifier that rebuilds any draft naming an unsupported attribute with APG. It runs offline on a 16\,GB laptop CPU at about 20\,s per image.
+\textbf{Guarantees vs. readability.} Hard guarantees seem to strip out all unfounded free-text statements (70\% reduction per description, depending on the limitations of Section~\ref{sec:limits}) but yield descriptions that people do not want to read. Free-text generation with abstention, verification, and repair is thus advocated because it maintains the attribute guarantee only when necessary. This scheme is realized in \appname, which is SigLIP extraction with the fixed thresholds, a 1.5 billion parameter writer, and the claim extractor as the verifier repairing draft descriptions of unsupported attributes using APG. The algorithm runs offline on a laptop CPU with 16\,GB RAM, taking 20\,s per image.
 
 % -------------------------------------------------------------------------------------
 \section{Limitations}\label{sec:limits}
-The benchmark is small (200 test items, one product domain and dataset), so per-category estimates have wide intervals. Material agreement ($\kappa=0.50$) is below the commonly used 0.6 threshold, and category and color labels were verified from metadata pre-fills, which may favor metadata conventions. The human study used 30 items and two raters, and the judge was validated by a single labeler. Models were 4-bit quantized and decoded greedily with one prompt version; larger or unquantized models may behave differently. The APG guarantee holds only with respect to the lexicon-based claim extractor, which also scores attribute hallucination, so the equal rates of APG and \cond{B-Abs} follow largely by construction. The 70\% reduction in unsupported non-attribute claims is not normalized for description length, and APG outputs are terse by design, so part of it may reflect shorter text; the judge also over-counts (precision 0.31) and was validated by a single labeler. Abstention is only partly calibrated: color selective accuracy on test (0.827) fell short of the 0.90 target, and the removal of material errors reflects coverage loss (98\% abstention) rather than accurate perception.
+The benchmark is tiny (200 test items, one product domain and dataset), therefore estimates of each category have large confidence intervals. Material agreement ($\kappa=0.50$) is lower than the standard 0.6 threshold, and category and color labels were checked from pre-filled metadata, which may bias towards conventions used in metadata. The human experiment involved 30 items and two raters, and the judge was calibrated with the single labeler. Models were quantized to 4-bits and greedy decoded with a single prompt; larger or unquantized models could differ. The APG guarantee applies only to the lexicon-based claim extractor, which evaluates attribute hallucination, hence equal rates of APG and \cond{B-Abs} are mostly designed in. The 70\% reduction in unsupported non-attribute claims is not adjusted to description length, and APG responses are brief by design, therefore some part of it is due to shorter descriptions; the judge over-counts (precision 0.31) and was calibrated with the single labeler. Abstention is not fully calibrated: color selective accuracy on test (0.827) was below the 0.90 target, and the reduction of material errors is due to the coverage loss (98\% abstention).
 
 % -------------------------------------------------------------------------------------
 \section{Conclusion}\label{sec:conclusion}
-This study traced attribute hallucination in image-grounded product descriptions to its source. With structured evidence, language models add no attribute errors (generator deviation at most 0.005 [0.000, 0.015]). Threshold-based abstention survives generation (leakage at most 0.005 on extractor evidence) and removes all 116 material errors ($p=1.2\times10^{-34}$), at the price of stating material for only 2\% of items. Grounding with abstention reduces category and color hallucination from 0.46 to 0.07 and from 0.45 to 0.15 relative to image-only models ($p<10^{-12}$), and free-text output remains publishable as written for 93\% of descriptions, whereas a formal no-invention constraint is rated far less fluent. Future work will improve material perception through fine-tuning and multi-view images, abstain jointly over correlated attributes, and extend the study to other product domains and languages.
+The study pinpointed the source of the attribute hallucination phenomenon in image-grounded product descriptions. The use of structured evidence ensures that there are no errors introduced by the language models when hallucinating attributes (generator deviation is at most 0.005 [0.000, 0.015]). The threshold abstention approach not only persists but performs flawlessly in the generation stage (leakage is at most 0.005 based on the extractor’s evidence) and filters out all 116 material errors ($p=1.2 \times 10^{-34}$), but at the expense of mentioning material in only 2\% of items. Image grounding coupled with abstention filters out category and color hallucination from 0.46 to 0.07 and 0.45 to 0.15 compared to the image-only model ($p < 10^{-12}$) while the generated text is acceptable for publishing as is in 93\% of the descriptions while a no invention constraint is less fluent.
 
 \subsubsection*{Data and Code Availability.}
 \ifanonymous
